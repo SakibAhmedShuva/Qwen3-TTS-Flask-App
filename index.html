@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qwen3-TTS Demo</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --bg-main: #ffffff;
+            --bg-panel: #f9fafb;
+            --border: #e5e7eb;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
+        }
+
+        body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; background-color: var(--bg-main); color: var(--text-main); margin: 0; padding: 20px 40px; }
+        h1 { font-size: 24px; font-weight: bold; margin-bottom: 5px; }
+        .subtitle { font-size: 14px; color: var(--text-muted); margin-bottom: 20px; line-height: 1.6; }
+        .subtitle ul { margin-top: 5px; padding-left: 20px; }
+        
+        .tabs { display: flex; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+        .tab-btn { background: none; border: none; padding: 10px 20px; font-size: 14px; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: 0.2s; }
+        .tab-btn:hover { color: var(--primary); }
+        .tab-btn.active { color: var(--primary); border-bottom: 2px solid var(--primary); font-weight: 500; }
+        
+        .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+        .panel { display: none; flex-direction: column; gap: 15px; }
+        .panel.active { display: flex; }
+        .box { background-color: var(--bg-main); border: 1px solid var(--border); border-radius: 8px; padding: 15px; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+        .box-header { background-color: #eef2ff; color: #4f46e5; display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; margin-bottom: 10px; }
+        
+        textarea, select, input[type="file"], input[type="text"] { width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 10px; font-size: 14px; font-family: inherit; box-sizing: border-box; background-color: var(--bg-panel); outline: none; resize: vertical; margin-bottom: 10px; }
+        textarea:focus, select:focus, input:focus { border-color: var(--primary); }
+        textarea.large { height: 120px; }
+        textarea.medium { height: 80px; }
+        
+        .row { display: flex; gap: 10px; }
+        .row > div { flex: 1; }
+        .checkbox-container { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-muted); margin-top: 5px; }
+
+        button.generate-btn { background-color: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.2s; width: 100%; margin-top: 10px; }
+        button.generate-btn:hover { background-color: #4f46e5; }
+        button.generate-btn:disabled { background-color: #a5b4fc; cursor: wait; }
+        
+        .output-col { display: flex; flex-direction: column; gap: 20px; }
+        audio { width: 100%; margin-top: 10px; outline: none; }
+        #statusOutput { font-family: monospace; font-size: 13px; color: #059669; white-space: pre-wrap; background: var(--bg-panel); min-height: 80px; }
+    </style>
+</head>
+<body>
+
+    <h1>Qwen3-TTS Demo</h1>
+    <div class="subtitle">
+        A unified Text-to-Speech demo featuring three powerful modes:
+        <ul>
+            <li><strong>Voice Design:</strong> Create custom voices using natural language descriptions</li>
+            <li><strong>Voice Clone (Base):</strong> Clone any voice from a reference audio</li>
+            <li><strong>TTS (CustomVoice):</strong> Generate speech with predefined speakers and optional style instructions</li>
+        </ul>
+    </div>
+
+    <!-- TABS -->
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('design')">Voice Design</button>
+        <button class="tab-btn" onclick="switchTab('clone')">Voice Clone (Base)</button>
+        <button class="tab-btn" onclick="switchTab('tts')">TTS (CustomVoice)</button>
+    </div>
+
+    <div class="main-grid">
+        <!-- LEFT COLUMN: INPUTS -->
+        <div class="input-col">
+            
+            <!-- MODE 1: Voice Design -->
+            <div id="panel-design" class="panel active">
+                <div class="box">
+                    <div class="box-header">Text to Synthesize</div>
+                    <textarea id="designText" class="large" placeholder="It's in the top drawer... wait, it's empty? No way, that's impossible! I'm sure I put it there!">It's in the top drawer... wait, it's empty? No way, that's impossible! I'm sure I put it there!</textarea>
+                </div>
+                <div class="box">
+                    <div class="box-header">Language</div>
+                    <select id="designLang">
+                        <option value="Auto">Auto</option><option value="mn">Mongolian</option><option value="en">English</option>
+                    </select>
+                </div>
+                <div class="box">
+                    <div class="box-header">Voice Description</div>
+                    <textarea id="designPrompt" class="medium" placeholder="Speak in an incredulous tone, but with a hint of panic beginning to creep into your voice.">Speak in an incredulous tone, but with a hint of panic beginning to creep into your voice.</textarea>
+                </div>
+                <p style="font-size:12px; color:gray; margin-top:-5px;">Note: Voice Design only uses the 1.7B Model.</p>
+                <button class="generate-btn" id="btn-design" onclick="generate('design')">Generate with Custom Voice</button>
+            </div>
+
+            <!-- MODE 2: Voice Clone -->
+            <div id="panel-clone" class="panel">
+                <div class="box">
+                    <div class="box-header">Target Text (Text to synthesize)</div>
+                    <textarea id="cloneTargetText" class="large" placeholder="Enter the text you want the cloned voice to speak..."></textarea>
+                </div>
+                <div class="box">
+                    <div class="box-header">Reference Audio (Upload voice sample)</div>
+                    <input type="file" id="cloneAudio" accept="audio/*">
+                </div>
+                <div class="box">
+                    <div class="box-header">Reference Text (Transcript of reference audio)</div>
+                    <textarea id="cloneRefText" class="medium" placeholder="Enter the exact text spoken in the reference audio..."></textarea>
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="cloneXVector"> Use x-vector only (No ref text needed, lower quality)
+                    </label>
+                </div>
+                <div class="row">
+                    <div class="box">
+                        <div class="box-header">Language</div>
+                        <select id="cloneLang"><option value="Auto">Auto</option><option value="mn">Mongolian</option><option value="en">English</option></select>
+                    </div>
+                    <div class="box">
+                        <div class="box-header">Model Size</div>
+                        <select id="cloneModelSize"><option value="1.7B">1.7B</option><option value="0.6B">0.6B</option></select>
+                    </div>
+                </div>
+                <button class="generate-btn" id="btn-clone" onclick="generate('clone')">Clone Voice</button>
+            </div>
+
+            <!-- MODE 3: TTS (CustomVoice) -->
+            <div id="panel-tts" class="panel">
+                <div class="box">
+                    <div class="box-header">Text to Synthesize</div>
+                    <textarea id="ttsText" class="large" placeholder="Hello! Welcome to Text-to-Speech system."></textarea>
+                </div>
+                <div class="row">
+                    <div class="box">
+                        <div class="box-header">Language</div>
+                        <select id="ttsLang"><option value="Auto">Auto</option><option value="mn">Mongolian</option><option value="en">English</option></select>
+                    </div>
+                    <div class="box">
+                        <div class="box-header">Speaker</div>
+                        <select id="ttsSpeaker">
+                            <option value="Aiden">Aiden</option>
+                            <option value="Dylan">Dylan</option>
+                            <option value="Eric">Eric</option>
+                            <option value="Ono_anna">Ono_anna</option>
+                            <option value="Ryan">Ryan</option>
+                            <option value="Serena">Serena</option>
+                            <option value="Sohee">Sohee</option>
+                            <option value="Uncle_fu">Uncle_fu</option>
+                            <option value="Vivian">Vivian</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="box">
+                        <div class="box-header">Style Instructions (Optional)</div>
+                        <textarea id="ttsStyle" class="medium" placeholder="E.g., Speak softly and calmly."></textarea>
+                    </div>
+                    <div class="box">
+                        <div class="box-header">Model Size</div>
+                        <select id="ttsModelSize"><option value="1.7B">1.7B</option><option value="0.6B">0.6B</option></select>
+                    </div>
+                </div>
+                <button class="generate-btn" id="btn-tts" onclick="generate('tts')">Generate Speech</button>
+            </div>
+
+        </div>
+
+        <!-- RIGHT COLUMN: OUTPUTS -->
+        <div class="output-col">
+            <div class="box">
+                <div class="box-header">🎵 Generated Audio</div>
+                <audio id="audioPlayer" controls>
+                    <source id="audioSource" src="" type="audio/wav">
+                    Your browser does not support the audio element.
+                </audio>
+            </div>
+
+            <div class="box">
+                <div class="box-header">Status</div>
+                <div id="statusOutput">Waiting for input...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabId) {
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(`panel-${tabId}`).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+
+        async function generate(mode) {
+            const btn = document.getElementById(`btn-${mode}`);
+            const statusBox = document.getElementById('statusOutput');
+            const audioPlayer = document.getElementById('audioPlayer');
+            const audioSource = document.getElementById('audioSource');
+
+            btn.disabled = true;
+            btn.innerText = "Loading Model to GPU & Generating... Please wait.";
+            statusBox.innerText = "Downloading/Loading required Qwen model... Generating audio...";
+
+            let url = '';
+            let options = {};
+
+            try {
+                if (mode === 'design') {
+                    url = '/api/voice_design';
+                    options = {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text: document.getElementById('designText').value,
+                            language: document.getElementById('designLang').value,
+                            prompt: document.getElementById('designPrompt').value
+                        })
+                    };
+                } 
+                else if (mode === 'clone') {
+                    url = '/api/voice_clone';
+                    const formData = new FormData();
+                    formData.append('target_text', document.getElementById('cloneTargetText').value);
+                    formData.append('ref_text', document.getElementById('cloneRefText').value);
+                    formData.append('language', document.getElementById('cloneLang').value);
+                    formData.append('model_size', document.getElementById('cloneModelSize').value);
+                    formData.append('use_xvector', document.getElementById('cloneXVector').checked);
+                    
+                    const fileInput = document.getElementById('cloneAudio');
+                    if(fileInput.files.length === 0) {
+                        alert("Please upload a reference audio file!");
+                        throw new Error("No file uploaded");
+                    }
+                    formData.append('audio', fileInput.files[0]);
+                    options = { method: 'POST', body: formData }; 
+                } 
+                else if (mode === 'tts') {
+                    url = '/api/tts';
+                    options = {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text: document.getElementById('ttsText').value,
+                            language: document.getElementById('ttsLang').value,
+                            speaker: document.getElementById('ttsSpeaker').value,
+                            style: document.getElementById('ttsStyle').value,
+                            model_size: document.getElementById('ttsModelSize').value
+                        })
+                    };
+                }
+
+                const response = await fetch(url, options);
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusBox.innerText = data.status || "Success!";
+                    if (data.audio_url) {
+                        audioSource.src = `${data.audio_url}?t=${new Date().getTime()}`;
+                        audioPlayer.load();
+                        audioPlayer.play();
+                    }
+                } else {
+                    statusBox.innerText = "Error: " + data.error;
+                }
+
+            } catch (error) {
+                console.error(error);
+                statusBox.innerText = "Connection Error. Check Flask console.";
+            } finally {
+                btn.disabled = false;
+                if(mode === 'design') btn.innerText = "Generate with Custom Voice";
+                if(mode === 'clone') btn.innerText = "Clone Voice";
+                if(mode === 'tts') btn.innerText = "Generate Speech";
+            }
+        }
+    </script>
+</body>
+</html>
